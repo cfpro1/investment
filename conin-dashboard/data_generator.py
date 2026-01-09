@@ -91,20 +91,50 @@ def generate_signal_history(coin: Coin, days: int = 7) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 def generate_model_signal_history(coin: Coin, model_id: str, days: int = 7) -> pd.DataFrame:
-    """특정 모델의 시그널 히스토리 생성"""
+    """특정 모델의 시그널 히스토리 생성 (정답 여부 포함)"""
     today = datetime.now()
     data = []
     base_price = COIN_BASE_PRICES[coin]
+    prices = []
     
+    # 먼저 모든 날짜의 가격 생성
     for i in range(days - 1, -1, -1):
         date = today - timedelta(days=i)
-        price = base_price * random_between(0.9, 1.1)
+        if i == days - 1:
+            price = base_price * random_between(0.9, 1.1)
+        else:
+            # 이전 가격을 기준으로 변동
+            prev_price = prices[-1]
+            change = random_between(-0.05, 0.05)
+            price = prev_price * (1 + change)
+        prices.append(price)
+    
+    # 시그널과 정답 여부 생성
+    for i in range(days - 1, -1, -1):
+        date = today - timedelta(days=i)
+        price = prices[days - 1 - i]
+        signal = random_signal()
+        
+        # 정답 여부 판단: 다음 날 가격과 비교
+        is_correct = None
+        if i > 0:  # 마지막 날이 아닌 경우
+            next_price = prices[days - 1 - (i - 1)]
+            price_change = (next_price - price) / price * 100
+            
+            if signal == 'Long':
+                is_correct = price_change > 1.0  # 1% 이상 상승
+            elif signal == 'Short':
+                is_correct = price_change < -1.0  # 1% 이상 하락
+            else:  # Stay
+                is_correct = abs(price_change) <= 1.0  # 1% 이내 변동
+        
         data.append({
             'date': date,
             'coin': coin,
             'model': model_id,
-            'signal': random_signal(),
+            'signal': signal,
             'price': price,
+            'is_correct': is_correct,
         })
     
     return pd.DataFrame(data)
@@ -169,21 +199,66 @@ def generate_model_positions(model_id: str) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 def generate_signal_history_all(days: int = 20) -> pd.DataFrame:
-    """전체 시그널 히스토리 생성"""
+    """전체 시그널 히스토리 생성 (정답 여부 포함)"""
     coins = ['BTC', 'ETH', 'ADA', 'DOT', 'XRP', 'SOL', 'DOGE']
     data = []
     today = datetime.now()
     
+    # 코인별 가격 히스토리 저장
+    coin_prices = {coin: [] for coin in coins}
+    
+    # 먼저 가격 데이터 생성
     for i in range(days - 1, -1, -1):
         date = today - timedelta(days=i // 3)
         coin = random.choice(coins)
         base_price = COIN_BASE_PRICES[coin]
         
+        if coin not in coin_prices or len(coin_prices[coin]) == 0:
+            price = base_price * random_between(0.9, 1.1)
+        else:
+            prev_price = coin_prices[coin][-1]['price']
+            change = random_between(-0.05, 0.05)
+            price = prev_price * (1 + change)
+        
+        coin_prices[coin].append({'date': date, 'price': price})
+    
+    # 시그널과 정답 여부 생성
+    coin_price_idx = {coin: 0 for coin in coins}
+    
+    for i in range(days - 1, -1, -1):
+        date = today - timedelta(days=i // 3)
+        coin = random.choice(coins)
+        
+        if coin_price_idx[coin] < len(coin_prices[coin]):
+            price_data = coin_prices[coin][coin_price_idx[coin]]
+            price = price_data['price']
+            coin_price_idx[coin] += 1
+        else:
+            base_price = COIN_BASE_PRICES[coin]
+            price = base_price * random_between(0.9, 1.1)
+        
+        signal = random_signal()
+        
+        # 정답 여부 판단
+        is_correct = None
+        if i > 0 and coin_price_idx[coin] < len(coin_prices[coin]):
+            next_price_data = coin_prices[coin][coin_price_idx[coin]]
+            next_price = next_price_data['price']
+            price_change = (next_price - price) / price * 100
+            
+            if signal == 'Long':
+                is_correct = price_change > 1.0
+            elif signal == 'Short':
+                is_correct = price_change < -1.0
+            else:  # Stay
+                is_correct = abs(price_change) <= 1.0
+        
         data.append({
             'date': date,
             'coin': coin,
-            'signal': random_signal(),
-            'price': base_price * random_between(0.9, 1.1),
+            'signal': signal,
+            'price': price,
+            'is_correct': is_correct,
         })
     
     return pd.DataFrame(data).sort_values('date', ascending=False)
