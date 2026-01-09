@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime
 from data_generator import (
     generate_models, generate_today_signals, generate_signal_history,
@@ -233,21 +234,96 @@ def main_dashboard():
             
             st.divider()
             
-            # 가격 차트
-            st.markdown(f"### {row['coin']} 가격 차트 (30일)")
+            # 가격 차트와 모델별 수익률 차트
+            st.markdown(f"### {row['coin']} 가격 차트 및 모델별 수익률 (30일)")
+            
+            # 30일 가격 데이터 생성
             price_data = generate_price_data(row['coin'], 30)
-            fig = px.line(
-                price_data,
-                x='date',
-                y='price',
-                title=f"{row['coin']} 가격 차트 (30일)",
-                labels={'price': '가격 (USD)', 'date': '날짜'}
+            
+            # 각 모델의 30일간 시그널 히스토리 가져오기
+            models = ['G', 'A', 'B']
+            model_names = {'G': 'Model G', 'A': 'Model A', 'B': 'Model B'}
+            
+            # 각 모델별 누적 수익률 계산
+            model_returns = {}
+            for model_id in models:
+                model_history = generate_model_signal_history(row['coin'], model_id, 30)
+                cumulative_return = 0
+                returns_data = []
+                
+                for i in range(len(model_history)):
+                    if i == 0:
+                        returns_data.append({'date': model_history.iloc[i]['date'], 'return': 0})
+                    else:
+                        prev_price = model_history.iloc[i-1]['price']
+                        curr_price = model_history.iloc[i]['price']
+                        signal = model_history.iloc[i-1]['signal']
+                        
+                        # 시그널에 따른 수익률 계산
+                        if signal == 'Long':
+                            daily_return = (curr_price - prev_price) / prev_price * 100
+                        elif signal == 'Short':
+                            daily_return = (prev_price - curr_price) / prev_price * 100
+                        else:  # Stay
+                            daily_return = 0
+                        
+                        cumulative_return += daily_return
+                        returns_data.append({
+                            'date': model_history.iloc[i]['date'],
+                            'return': cumulative_return
+                        })
+                
+                model_returns[model_id] = pd.DataFrame(returns_data)
+            
+            # 이중 Y축 차트 생성
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            # 가격 차트 (왼쪽 Y축)
+            fig.add_trace(
+                go.Scatter(
+                    x=price_data['date'],
+                    y=price_data['price'],
+                    name='가격',
+                    line=dict(color='#1f77b4', width=2),
+                    mode='lines'
+                ),
+                secondary_y=False,
             )
+            
+            # 각 모델의 수익률 차트 (오른쪽 Y축)
+            colors = {'G': '#10b981', 'A': '#3b82f6', 'B': '#f59e0b'}
+            for model_id in models:
+                returns_df = model_returns[model_id]
+                fig.add_trace(
+                    go.Scatter(
+                        x=returns_df['date'],
+                        y=returns_df['return'],
+                        name=f"{model_names[model_id]} 수익률",
+                        line=dict(color=colors[model_id], width=2, dash='dash'),
+                        mode='lines'
+                    ),
+                    secondary_y=True,
+                )
+            
+            # Y축 레이블 설정
+            fig.update_xaxes(title_text="날짜")
+            fig.update_yaxes(title_text="가격 (USD)", secondary_y=False)
+            fig.update_yaxes(title_text="누적 수익률 (%)", secondary_y=True)
+            
             fig.update_layout(
-                height=350,
-                showlegend=False,
-                margin=dict(l=20, r=20, t=40, b=40)
+                height=400,
+                title=f"{row['coin']} 가격 및 모델별 수익률 차트",
+                hovermode='x unified',
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                ),
+                margin=dict(l=50, r=50, t=60, b=40)
             )
+            
             # 모바일에서 차트가 잘 보이도록 설정
             fig.update_xaxes(tickangle=-45 if len(price_data) > 20 else 0)
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
@@ -347,12 +423,43 @@ def model_detail_page(model_id: str):
         st.error("모델을 찾을 수 없습니다.")
         return
     
-    if st.button("← 뒤로"):
-        if 'selected_model' in st.session_state:
-            del st.session_state.selected_model
-        st.rerun()
+    # 헤더 영역: 뒤로 버튼, 모델명, 코인 선택
+    col_back, col_title, col_coin = st.columns([1, 3, 2])
     
-    st.markdown(f'<div class="main-header">{model["name"]}</div>', unsafe_allow_html=True)
+    with col_back:
+        if st.button("← 뒤로"):
+            if 'selected_model' in st.session_state:
+                del st.session_state.selected_model
+            st.rerun()
+    
+    with col_title:
+        st.markdown(f'<div class="main-header">{model["name"]}</div>', unsafe_allow_html=True)
+    
+    with col_coin:
+        # 코인 선택
+        coins = ['BTC', 'ETH', 'ADA', 'DOT', 'XRP', 'SOL', 'DOGE']
+        selected_coin_key = f'coin_select_{model_id}'
+        
+        # 초기값 설정
+        if selected_coin_key not in st.session_state:
+            st.session_state[selected_coin_key] = '전체'
+        
+        # 현재 값 가져오기
+        current_value = st.session_state.get(selected_coin_key, '전체')
+        options = ['전체'] + coins
+        try:
+            default_index = options.index(current_value) if current_value in options else 0
+        except:
+            default_index = 0
+        
+        selected_coin = st.selectbox(
+            "코인 선택",
+            options,
+            key=selected_coin_key,
+            index=default_index,
+            label_visibility="collapsed"  # 라벨 숨기기
+        )
+        st.caption("코인 선택")  # 라벨을 캡션으로 표시
     
     # 성과 탭
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(['1M', '3M', '6M', '1Y', '2Y', '3Y'])
@@ -378,23 +485,115 @@ def model_detail_page(model_id: str):
             with col5:
                 st.metric("거래 횟수", int(period_data['numTrades']))
             
-            # 누적 수익률 차트
-            period_days = {'1M': 30, '3M': 90, '6M': 180, '1Y': 365, '2Y': 730, '3Y': 1095}[period]
-            returns_data = generate_cumulative_returns(period_days)
+            st.divider()
             
-            fig = px.line(
-                returns_data,
-                x='date',
-                y='return',
-                title=f"누적 수익률 차트 ({period})",
-                labels={'return': '누적 수익률 (%)', 'date': '날짜'}
-            )
-            fig.update_layout(
-                height=350,
-                margin=dict(l=20, r=20, t=40, b=40)
-            )
-            fig.update_xaxes(tickangle=-45 if len(returns_data) > 30 else 0)
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            # 전체 수익률 차트 또는 코인별 차트
+            period_days = {'1M': 30, '3M': 90, '6M': 180, '1Y': 365, '2Y': 730, '3Y': 1095}[period]
+            
+            if selected_coin == '전체':
+                # 전체 누적 수익률 차트
+                st.markdown(f"### 전체 누적 수익률 차트 ({period})")
+                returns_data = generate_cumulative_returns(period_days)
+                
+                fig = px.line(
+                    returns_data,
+                    x='date',
+                    y='return',
+                    title=f"누적 수익률 차트 ({period})",
+                    labels={'return': '누적 수익률 (%)', 'date': '날짜'}
+                )
+                fig.update_layout(
+                    height=350,
+                    margin=dict(l=20, r=20, t=40, b=40)
+                )
+                fig.update_xaxes(tickangle=-45 if len(returns_data) > 30 else 0)
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            else:
+                # 코인별 가격 및 수익률 차트
+                st.markdown(f"### {selected_coin} 가격 및 수익률 차트 ({period})")
+                
+                # 코인 가격 데이터 생성
+                coin_price_data = generate_price_data(selected_coin, period_days)
+                
+                # 해당 모델의 시그널 히스토리 가져오기
+                model_history = generate_model_signal_history(selected_coin, model_id, period_days)
+                
+                # 수익률 계산
+                cumulative_return = 0
+                returns_data = []
+                
+                for i in range(len(model_history)):
+                    if i == 0:
+                        returns_data.append({'date': model_history.iloc[i]['date'], 'return': 0})
+                    else:
+                        prev_price = model_history.iloc[i-1]['price']
+                        curr_price = model_history.iloc[i]['price']
+                        signal = model_history.iloc[i-1]['signal']
+                        
+                        # 시그널에 따른 수익률 계산
+                        if signal == 'Long':
+                            daily_return = (curr_price - prev_price) / prev_price * 100
+                        elif signal == 'Short':
+                            daily_return = (prev_price - curr_price) / prev_price * 100
+                        else:  # Stay
+                            daily_return = 0
+                        
+                        cumulative_return += daily_return
+                        returns_data.append({
+                            'date': model_history.iloc[i]['date'],
+                            'return': cumulative_return
+                        })
+                
+                returns_df = pd.DataFrame(returns_data)
+                
+                # 이중 Y축 차트 생성
+                fig = make_subplots(specs=[[{"secondary_y": True}]])
+                
+                # 가격 차트 (왼쪽 Y축)
+                fig.add_trace(
+                    go.Scatter(
+                        x=coin_price_data['date'],
+                        y=coin_price_data['price'],
+                        name='가격',
+                        line=dict(color='#1f77b4', width=2),
+                        mode='lines'
+                    ),
+                    secondary_y=False,
+                )
+                
+                # 수익률 차트 (오른쪽 Y축)
+                fig.add_trace(
+                    go.Scatter(
+                        x=returns_df['date'],
+                        y=returns_df['return'],
+                        name=f'{model["name"]} 수익률',
+                        line=dict(color='#10b981', width=2, dash='dash'),
+                        mode='lines'
+                    ),
+                    secondary_y=True,
+                )
+                
+                # Y축 레이블 설정
+                fig.update_xaxes(title_text="날짜")
+                fig.update_yaxes(title_text="가격 (USD)", secondary_y=False)
+                fig.update_yaxes(title_text="누적 수익률 (%)", secondary_y=True)
+                
+                fig.update_layout(
+                    height=400,
+                    title=f"{selected_coin} 가격 및 {model['name']} 수익률 차트 ({period})",
+                    hovermode='x unified',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    ),
+                    margin=dict(l=50, r=50, t=60, b=40)
+                )
+                
+                fig.update_xaxes(tickangle=-45 if len(coin_price_data) > 30 else 0)
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     
     st.divider()
     
