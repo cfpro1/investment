@@ -15,10 +15,10 @@ st.set_page_config(
     page_title="코인 선물 예측 모델 대시보드",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# CSS 스타일
+# CSS 스타일 (모바일 반응형)
 st.markdown("""
 <style>
     .main-header {
@@ -48,6 +48,7 @@ st.markdown("""
         padding: 0.3rem 0.8rem;
         border-radius: 5px;
         display: inline-block;
+        font-size: 0.9rem;
     }
     .signal-short {
         background-color: #ef4444;
@@ -55,6 +56,7 @@ st.markdown("""
         padding: 0.3rem 0.8rem;
         border-radius: 5px;
         display: inline-block;
+        font-size: 0.9rem;
     }
     .signal-stay {
         background-color: #6b7280;
@@ -62,6 +64,61 @@ st.markdown("""
         padding: 0.3rem 0.8rem;
         border-radius: 5px;
         display: inline-block;
+        font-size: 0.9rem;
+    }
+    
+    /* 모바일 반응형 스타일 */
+    @media screen and (max-width: 768px) {
+        .main-header {
+            font-size: 1.8rem;
+        }
+        .model-card {
+            padding: 1rem;
+            margin-bottom: 0.8rem;
+        }
+        .model-card h3 {
+            font-size: 1.2rem;
+        }
+        .model-card p {
+            font-size: 1.2rem !important;
+        }
+        .signal-long, .signal-short, .signal-stay {
+            padding: 0.25rem 0.6rem;
+            font-size: 0.85rem;
+        }
+        /* 테이블 가로 스크롤 */
+        .dataframe {
+            overflow-x: auto;
+            display: block;
+        }
+        /* Streamlit 컬럼을 모바일에서 세로로 배치 */
+        [data-testid="column"] {
+            width: 100% !important;
+            flex: 0 0 100% !important;
+        }
+    }
+    
+    /* 작은 화면 (480px 이하) */
+    @media screen and (max-width: 480px) {
+        .main-header {
+            font-size: 1.5rem;
+        }
+        .model-card {
+            padding: 0.8rem;
+        }
+        .model-card h3 {
+            font-size: 1rem;
+        }
+        .model-card p {
+            font-size: 1rem !important;
+        }
+    }
+    
+    /* 테이블 모바일 최적화 */
+    @media screen and (max-width: 768px) {
+        div[data-testid="stDataFrame"] {
+            overflow-x: auto;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -99,9 +156,9 @@ def main_dashboard():
     with col1:
         st.markdown("### 모델별 3개월 수익률 요약")
     with col2:
-        st.markdown(f"**최고 성과:** {best_model['name']} ({format_percent(best_model['performance3M'])})")
+        st.caption(f"**최고 성과:** {best_model['name']} ({format_percent(best_model['performance3M'])})")
     
-    # 모델 카드
+    # 모델 카드 - PC에서는 3열, 모바일에서는 자동으로 세로 배치
     cols = st.columns(3)
     for idx, model in enumerate(st.session_state.models):
         with cols[idx]:
@@ -116,13 +173,13 @@ def main_dashboard():
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(f"{model['name']} 상세보기", key=f"btn_{model['id']}"):
+            if st.button(f"{model['name']} 상세보기", key=f"btn_{model['id']}", use_container_width=True):
                 st.session_state.selected_model = model['id']
                 st.rerun()
     
     st.divider()
     
-    # 필터
+    # 필터 - PC에서는 2열, 모바일에서는 자동으로 세로 배치
     col1, col2 = st.columns(2)
     with col1:
         selected_model_filter = st.selectbox(
@@ -154,21 +211,22 @@ def main_dashboard():
     
     for _, row in signals_df.iterrows():
         with st.expander(f"{row['coin']} - {format_currency(row['current_price'])}", expanded=False):
-            # 오늘의 시그널 표시
+            # 오늘의 시그널 표시 - 모바일 친화적으로
             st.markdown("### 오늘의 시그널")
-            col1, col2, col3 = st.columns(3)
+            # 모바일에서는 작은 화면에서도 잘 보이도록 조정
+            cols = st.columns(3)
             
-            with col1:
+            with cols[0]:
                 st.markdown("**Model G**")
                 signal = row['modelG']
                 st.markdown(f'<span class="signal-{signal.lower()}">{signal}</span>', unsafe_allow_html=True)
             
-            with col2:
+            with cols[1]:
                 st.markdown("**Model A**")
                 signal = row['modelA']
                 st.markdown(f'<span class="signal-{signal.lower()}">{signal}</span>', unsafe_allow_html=True)
             
-            with col3:
+            with cols[2]:
                 st.markdown("**Model B**")
                 signal = row['modelB']
                 st.markdown(f'<span class="signal-{signal.lower()}">{signal}</span>', unsafe_allow_html=True)
@@ -185,8 +243,14 @@ def main_dashboard():
                 title=f"{row['coin']} 가격 차트 (30일)",
                 labels={'price': '가격 (USD)', 'date': '날짜'}
             )
-            fig.update_layout(height=400, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(
+                height=350,
+                showlegend=False,
+                margin=dict(l=20, r=20, t=40, b=40)
+            )
+            # 모바일에서 차트가 잘 보이도록 설정
+            fig.update_xaxes(tickangle=-45 if len(price_data) > 20 else 0)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
             
             st.divider()
             
@@ -203,21 +267,27 @@ def main_dashboard():
             
             # 첫 번째 모델의 날짜와 가격을 기준으로 통합
             base_history = all_histories['G'].copy()
-            base_history = base_history.rename(columns={'signal': 'Model G'})
+            base_history = base_history.rename(columns={'signal': 'Model G', 'is_correct': '정답_G'})
             base_history = base_history.drop(columns=['coin', 'model'], errors='ignore')
             
-            # 다른 모델들의 시그널 추가
+            # 다른 모델들의 시그널과 정답 여부 추가
             for model_id in ['A', 'B']:
                 model_history = all_histories[model_id].copy()
-                model_history = model_history.rename(columns={'signal': f'Model {model_id}'})
+                model_history = model_history.rename(columns={
+                    'signal': f'Model {model_id}',
+                    'is_correct': f'정답_{model_id}'
+                })
                 base_history = base_history.merge(
-                    model_history[['date', f'Model {model_id}']],
+                    model_history[['date', f'Model {model_id}', f'정답_{model_id}']],
                     on='date',
                     how='left'
                 )
             
-            # 컬럼 순서 재정렬
-            base_history = base_history[['date', 'price', 'Model G', 'Model A', 'Model B']]
+            # 컬럼 순서 재정렬 (날짜 컬럼명 변경 전에)
+            column_order = ['date', 'price', 'Model G', '정답_G', 'Model A', '정답_A', 'Model B', '정답_B']
+            base_history = base_history[[col for col in column_order if col in base_history.columns]]
+            
+            # 날짜와 가격 컬럼명 변경
             base_history = base_history.rename(columns={
                 'date': '날짜',
                 'price': '가격'
@@ -233,20 +303,42 @@ def main_dashboard():
                             'background-color: #ef4444; color: white' if x == 'Short' else
                             'background-color: #6b7280; color: white'
                         )
+                # 정답 여부 스타일링
+                for col in ['정답_G', '정답_A', '정답_B']:
+                    if col in df.columns:
+                        styles[col] = df[col].apply(lambda x: 
+                            'background-color: #10b981; color: white' if x == True else
+                            'background-color: #ef4444; color: white' if x == False else
+                            'background-color: #e5e7eb; color: #6b7280'
+                        )
                 return styles
             
             # 날짜 포맷팅
             base_history['날짜'] = pd.to_datetime(base_history['날짜']).dt.strftime('%Y-%m-%d')
             
+            # 정답 여부를 텍스트로 변환
+            for col in ['정답_G', '정답_A', '정답_B']:
+                if col in base_history.columns:
+                    base_history[col] = base_history[col].apply(
+                        lambda x: '정답' if x == True else '오답' if x == False else '-'
+                    )
+            
+            # 컬럼 순서 재정렬
+            column_order = ['날짜', '가격', 'Model G', '정답_G', 'Model A', '정답_A', 'Model B', '정답_B']
+            base_history = base_history[[col for col in column_order if col in base_history.columns]]
+            
             styled_df = base_history.style.format({
                 '가격': '${:,.2f}'
             }).apply(style_signal_columns, axis=None)
             
+            # 모바일에서 테이블이 가로 스크롤 가능하도록
             st.dataframe(
                 styled_df,
                 use_container_width=True,
                 hide_index=True
             )
+            # 모바일 사용자를 위한 안내
+            st.caption("💡 모바일에서는 테이블을 좌우로 스와이프하여 전체 내용을 확인할 수 있습니다.")
 
 # 모델 상세 페이지
 def model_detail_page(model_id: str):
@@ -272,7 +364,7 @@ def model_detail_page(model_id: str):
             perf_data = generate_performance_data(model_id)
             period_data = perf_data[perf_data['period'] == period].iloc[0]
             
-            # 성과 지표
+            # 성과 지표 - PC에서는 5열, 모바일에서는 자동으로 조정
             col1, col2, col3, col4, col5 = st.columns(5)
             
             with col1:
@@ -297,8 +389,12 @@ def model_detail_page(model_id: str):
                 title=f"누적 수익률 차트 ({period})",
                 labels={'return': '누적 수익률 (%)', 'date': '날짜'}
             )
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(
+                height=350,
+                margin=dict(l=20, r=20, t=40, b=40)
+            )
+            fig.update_xaxes(tickangle=-45 if len(returns_data) > 30 else 0)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     
     st.divider()
     
@@ -321,6 +417,7 @@ def model_detail_page(model_id: str):
         use_container_width=True,
         hide_index=True
     )
+    st.caption("💡 모바일에서는 테이블을 좌우로 스와이프하여 전체 내용을 확인할 수 있습니다.")
     
     st.divider()
     
@@ -332,14 +429,54 @@ def model_detail_page(model_id: str):
     if selected_coin != '전체':
         history_all = history_all[history_all['coin'] == selected_coin]
     
+    # 정답 여부를 텍스트로 변환
+    history_display = history_all.head(20).copy()
+    if 'is_correct' in history_display.columns:
+        history_display['정답여부'] = history_display['is_correct'].apply(
+            lambda x: '정답' if x == True else '오답' if x == False else '-'
+        )
+        history_display = history_display.drop(columns=['is_correct'])
+    
+    # 시그널 스타일링 함수
+    def style_history_signal(df):
+        styles = pd.DataFrame('', index=df.index, columns=df.columns)
+        if 'signal' in df.columns:
+            styles['signal'] = df['signal'].apply(lambda x: 
+                'background-color: #10b981; color: white' if x == 'Long' else
+                'background-color: #ef4444; color: white' if x == 'Short' else
+                'background-color: #6b7280; color: white'
+            )
+        if '정답여부' in df.columns:
+            styles['정답여부'] = df['정답여부'].apply(lambda x: 
+                'background-color: #10b981; color: white' if x == '정답' else
+                'background-color: #ef4444; color: white' if x == '오답' else
+                'background-color: #e5e7eb; color: #6b7280'
+            )
+        return styles
+    
+    # 컬럼 이름 변경
+    history_display = history_display.rename(columns={
+        'date': '날짜',
+        'coin': '코인',
+        'signal': '시그널',
+        'price': '가격'
+    })
+    
+    # 컬럼 순서 재정렬
+    column_order = ['날짜', '코인', '시그널', '가격', '정답여부']
+    history_display = history_display[[col for col in column_order if col in history_display.columns]]
+    
+    styled_history = history_display.style.format({
+        '가격': '${:,.2f}',
+        '날짜': lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) else ''
+    }).apply(style_history_signal, axis=None)
+    
     st.dataframe(
-        history_all.head(20).style.format({
-            'price': '${:,.2f}',
-            'date': lambda x: x.strftime('%Y-%m-%d')
-        }),
+        styled_history,
         use_container_width=True,
         hide_index=True
     )
+    st.caption("💡 모바일에서는 테이블을 좌우로 스와이프하여 전체 내용을 확인할 수 있습니다.")
 
 # 메인 로직
 if 'selected_model' in st.session_state:
